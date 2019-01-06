@@ -16,6 +16,7 @@
 package okhttp3.internal.http;
 
 import java.io.IOException;
+import okhttp3.Call;
 import okhttp3.Headers;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -35,7 +36,7 @@ public interface HttpCodec {
   Sink createRequestBody(Request request, long contentLength);
 
   /** This should update the HTTP engine's sentRequestMillis field. */
-  void writeRequestHeaders(Request request) throws IOException;
+  void writeRequestHeaders(Call call, Request request) throws IOException;
 
   /** Flush the request to the underlying socket. */
   void flushRequest() throws IOException;

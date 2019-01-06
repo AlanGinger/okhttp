@@ -32,6 +32,10 @@ import okhttp3.internal.http.RealInterceptorChain;
 import okhttp3.internal.http.RetryAndFollowUpInterceptor;
 import okhttp3.internal.platform.Platform;
 import okio.AsyncTimeout;
+import okio.BufferedSink;
+import okio.Okio;
+import okio.Pipe;
+import okio.Sink;
 import okio.Timeout;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -49,11 +53,12 @@ final class RealCall implements Call {
   private @Nullable EventListener eventListener;
 
   /** The application's original request unadulterated by redirects or auth headers. */
-  final Request originalRequest;
+   Request originalRequest;
   final boolean forWebSocket;
 
   // Guarded by this.
   private boolean executed;
+  private volatile @Nullable DuplexCallback duplexCallback;
 
   private RealCall(OkHttpClient client, Request originalRequest, boolean forWebSocket) {
     this.client = client;
@@ -75,11 +80,24 @@ final class RealCall implements Call {
     return call;
   }
 
+  public BufferedSink duplexRequestBodySink(String method, @Nullable MediaType contentType) {
+    if (method == null) throw new NullPointerException("method == null");
+
+    originalRequest = originalRequest.newBuilder().method(method).build();
+
+    this.duplexCallback = new DuplexCallback(new Pipe(1024 * 512), method, contentType);
+    enqueue(duplexCallback);
+    return Okio.buffer(duplexCallback.pipe.sink());
+  }
+
   @Override public Request request() {
     return originalRequest;
   }
 
   @Override public Response execute() throws IOException {
+    if (duplexCallback != null) {
+      return duplexCallback.awaitExecute();
+    }
     synchronized (this) {
       if (executed) throw new IllegalStateException("Already Executed");
       executed = true;
@@ -149,6 +167,14 @@ final class RealCall implements Call {
 
   StreamAllocation streamAllocation() {
     return retryAndFollowUpInterceptor.streamAllocation();
+  }
+
+  boolean isDuplex() {
+    return duplexCallback != null;
+  }
+
+  void initRequestBodySink(Sink requestBodyOut) {
+    duplexCallback.initRequestBodySink(requestBodyOut);
   }
 
   final class AsyncCall extends NamedRunnable {
@@ -252,5 +278,58 @@ final class RealCall implements Call {
         client.readTimeoutMillis(), client.writeTimeoutMillis());
 
     return chain.proceed(originalRequest);
+  }
+
+  static final class DuplexCallback implements Callback {
+    final Pipe pipe;
+    final String method;
+    final @Nullable MediaType contentType;
+    @Nullable IOException failure;
+    @Nullable Response response;
+
+    DuplexCallback(Pipe pipe, String method, @Nullable MediaType contentType) {
+      this.pipe = pipe;
+      this.method = method;
+      this.contentType = contentType;
+    }
+
+    void initRequestBodySink(Sink requestBodyOut) {
+      // TODO: invent a folding pipe and use that here.
+      Thread thread = new Thread("duplex folder thingy") {
+        @Override public void run() {
+          try (BufferedSink requestBody = Okio.buffer(requestBodyOut)) {
+            requestBody.writeAll(pipe.source());
+          } catch (IOException e) {
+            e.printStackTrace(); // TODO: actual fold should fix this.
+          }
+        }
+      };
+      thread.start();
+    }
+
+    @Override public synchronized void onFailure(Call call, IOException e) {
+      if (this.failure != null || this.response != null) throw new IllegalStateException();
+      this.failure = e;
+      notifyAll();
+    }
+
+    @Override public synchronized void onResponse(Call call, Response response) {
+      if (this.failure != null || this.response != null) throw new IllegalStateException();
+      this.response = response;
+      notifyAll();
+    }
+
+    public synchronized Response awaitExecute() throws IOException {
+      try {
+        while (failure == null && response == null) {
+          wait();
+        }
+        if (failure != null) throw failure;
+        return response;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt(); // Retain interrupted status.
+        throw new InterruptedIOException();
+      }
+    }
   }
 }

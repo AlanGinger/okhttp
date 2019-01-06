@@ -24,6 +24,7 @@ import okhttp3.Call;
 import okhttp3.ConnectionPool;
 import okhttp3.ConnectionSpec;
 import okhttp3.Headers;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -34,6 +35,7 @@ import okhttp3.internal.connection.RouteDatabase;
 import okhttp3.internal.connection.StreamAllocation;
 import okhttp3.internal.http.HttpCodec;
 import okio.BufferedSink;
+import okio.Sink;
 
 /**
  * Escalate internal APIs in {@code okhttp3} so they can be used from OkHttp's implementation
@@ -81,12 +83,13 @@ public abstract class Internal {
 
   public abstract Call newWebSocketCall(OkHttpClient client, Request request);
 
-  public abstract void duplex(Request.Builder requestBuilder, String method);
+  public abstract void initCodec(
+      Response.Builder responseBuilder, HttpCodec httpCodec);
 
-  public abstract void sinkAndCodec(
-      Response.Builder responseBuilder, BufferedSink sink, HttpCodec httpCodec);
+  public abstract boolean isDuplex(Call call);
 
-  public abstract BufferedSink sink(Response response);
+  public abstract BufferedSink duplexRequestBodySink(Call call, String method, @Nullable
+      MediaType contentType);
 
-  public abstract boolean isDuplex(Request request);
+  public abstract void initRequestBodySink(Call call, Sink requestBodyOut);
 }

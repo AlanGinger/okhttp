@@ -18,6 +18,7 @@ package okhttp3.internal.http1;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.ProtocolException;
+import okhttp3.Call;
 import okhttp3.Headers;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -124,7 +125,7 @@ public final class Http1Codec implements HttpCodec {
    * output stream has been written to and closed. This ensures that the {@code Content-Length}
    * header field receives the proper value.
    */
-  @Override public void writeRequestHeaders(Request request) throws IOException {
+  @Override public void writeRequestHeaders(Call call, Request request) throws IOException {
     String requestLine = RequestLine.get(
         request, streamAllocation.connection().route().proxy().type());
     writeRequest(request.headers(), requestLine);

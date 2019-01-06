@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import okhttp3.Call;
 import okhttp3.Headers;
 import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
@@ -109,10 +110,10 @@ public final class Http2Codec implements HttpCodec {
     return stream.getSink();
   }
 
-  @Override public void writeRequestHeaders(Request request) throws IOException {
+  @Override public void writeRequestHeaders(Call call, Request request) throws IOException {
     if (stream != null) return;
 
-    boolean hasRequestBody = request.body() != null || Internal.instance.isDuplex(request);
+    boolean hasRequestBody = request.body() != null || Internal.instance.isDuplex(call);
     List<Header> requestHeaders = http2HeadersList(request);
     stream = connection.newStream(requestHeaders, hasRequestBody);
     // We may have been asked to cancel while creating the new stream and sending the request
